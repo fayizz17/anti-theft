@@ -1,0 +1,131 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
+
+// 📌 Define Pins
+#define buzzer 6      // Piezo Buzzer Pin
+#define xPin A1       // Accelerometer X-axis
+#define yPin A2       // Accelerometer Y-axis
+#define zPin A3       // Accelerometer Z-axis
+
+// 📌 Motion Detection Variables
+int xBase = 0, yBase = 0, zBase = 0;
+bool buzzerState = false;
+long buzzerStartTime;
+const int motionThreshold = 50;  // Sensitivity of motion detection
+const int buzzerDuration = 2000; // Buzzer ON time in milliseconds
+
+// 📌 Initialize LCD (I2C Address: 0x27)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// 📌 Initialize GPS Module (Software Serial)
+SoftwareSerial gpsSerial(3, 2); // GPS TX → Arduino 3, GPS RX → Arduino 2
+TinyGPSPlus gps;  // GPS object
+
+void setup() {
+    Serial.begin(9600);  // Serial Monitor
+    gpsSerial.begin(9600);  // GPS Module
+
+    pinMode(buzzer, OUTPUT);
+    digitalWrite(buzzer, LOW);
+
+    // 📌 Initialize LCD
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("Calibrating...");
+
+    Serial.println("Calibrating...");
+
+    // 📌 Calibrate the Accelerometer
+    for (int i = 0; i < 50; i++) {
+        xBase += analogRead(xPin);
+        yBase += analogRead(yPin);
+        zBase += analogRead(zPin);
+    }
+    xBase /= 50;
+    yBase /= 50;
+    zBase /= 50;
+
+    Serial.println("Calibration Complete!");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("System Stable");
+}
+
+void loop() {
+    // 📌 Read Accelerometer Values
+    int xValue = analogRead(xPin) - xBase;
+    int yValue = analogRead(yPin) - yBase;
+    int zValue = analogRead(zPin) - zBase;
+
+    int motionMagnitude = sqrt(sq(xValue) + sq(yValue) + sq(zValue));
+
+    Serial.print("X: "); Serial.print(xValue);
+    Serial.print(" | Y: "); Serial.print(yValue);
+    Serial.print(" | Z: "); Serial.print(zValue);
+    Serial.print(" | Magnitude: "); Serial.println(motionMagnitude);
+
+    // 📌 Check for Motion
+    if (motionMagnitude > motionThreshold) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Motion Detected!");
+        Serial.println("🚨 Motion Detected!");
+
+        if (!buzzerState) {
+            buzzerState = true;
+            buzzerStartTime = millis();
+            tone(buzzer, 1000);  // Turn ON Buzzer
+            lcd.setCursor(0, 1);
+            lcd.print("ALARM TRIGGERED!");
+            Serial.println("ALARM TRIGGERED!");
+        }
+    }
+
+    // 📌 Turn OFF Buzzer After buzzerDuration
+    if (buzzerState && millis() - buzzerStartTime >= buzzerDuration) {
+        buzzerState = false;
+        noTone(buzzer);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("System Stable");
+        Serial.println("System Stable");
+    }
+
+    // 📌 Process GPS Data
+    bool newData = false;
+    unsigned long gpsStartTime = millis();
+    while (millis() - gpsStartTime < 2000) { // Wait max 2 seconds for GPS data
+        if (gpsSerial.available()) {
+            if (gps.encode(gpsSerial.read())) {
+                newData = true;
+            }
+        }
+    }
+
+    // 📌 Display GPS Data on LCD
+    if (newData && gps.location.isValid()) {
+        float latitude = gps.location.lat();
+        float longitude = gps.location.lng();
+
+        Serial.print("Latitude: ");
+        Serial.println(latitude, 6);
+        Serial.print("Longitude: ");
+        Serial.println(longitude, 6);
+
+        lcd.setCursor(0, 1);
+        lcd.print("Lat: "); lcd.print(latitude, 6);
+        lcd.setCursor(0, 2);
+        lcd.print("Lon: "); lcd.print(longitude, 6);
+    } else {
+        Serial.println("Waiting for GPS...");
+        lcd.setCursor(0, 1);
+        lcd.print("Waiting for GPS...");
+    }
+
+    delay(500);
+}
+gps buzzer lcd.txt
+Displaying gps buzzer lcd.txt.
